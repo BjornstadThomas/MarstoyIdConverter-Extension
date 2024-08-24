@@ -1,12 +1,12 @@
 {
   "manifest_version": 2,
-  "name": "Marstoy Product Title Updater",
+  "name": "Marstoy Id Converter",
   "version": "1.0",
-  "description": "Updates product titles on Marstoy by checking against Brickable.",
+  "description": "Updates product titles on Marstoy by checking against Rebrickable.",
   "permissions": [
     "activeTab",
     "https://www.marstoy.com/",
-    "https://www.bricklink.com/"
+    "https://rebrickable.com/"
   ],
   "content_scripts": [
     {

@@ -1,3 +1,6 @@
+// Hardcoded API key
+const apiKey = '<YOUR-API-KEY-FROM-REBRICKABLE>'; // Replace with your actual API key
+
 // Function to reverse the ID (excluding the 'M') and fetch product data from Rebrickable API
 async function fetchRebrickableData(productId) {
     const reversedId = productId.slice(1).split('').reverse().join(''); // Remove 'M' and reverse the string
@@ -5,13 +8,13 @@ async function fetchRebrickableData(productId) {
     
     const url = `https://rebrickable.com/api/v3/lego/sets/${reversedId}-1/`;
     console.log(`Rebrickable API URL: ${url}`);
-    
+
     try {
         const response = await fetch(url, {
             method: 'GET',
             headers: {
                 'Accept': 'application/json',
-                'Authorization': 'key 3e613d4c0f5f966fd67529afe024212d' // Replace with your actual API key
+                'Authorization': `key ${apiKey}` // Use the hardcoded API key
             }
         });
 
@@ -38,17 +41,14 @@ async function fetchRebrickableData(productId) {
 async function updateProductTitleAndImage(productTitleElement, productId) {
     const rebrickableData = await fetchRebrickableData(productId);
 
-    // Example of a basic validation check to prevent incorrect updates
     const invalidKeywords = ["Plates", "Beams", "Bricks", "Miscellaneous"];
     
     if (rebrickableData && !invalidKeywords.some(keyword => rebrickableData.name.includes(keyword))) {
         productTitleElement.textContent = rebrickableData.name;
         console.log(`Updated product title to: ${rebrickableData.name}`);
 
-        // If we have a product image URL, find the corresponding image element and update it
         let productImageElement = null;
 
-        // Try different selectors to locate the image element
         if (productTitleElement.closest('.product-image')) {
             productImageElement = productTitleElement.closest('.product-image').querySelector('img');
         } else if (productTitleElement.closest('.product-snippet')) {
@@ -57,7 +57,6 @@ async function updateProductTitleAndImage(productTitleElement, productId) {
             productImageElement = document.querySelector('.product-image__content img');
         }
 
-        // Update the image source and alt attributes if the image element was found
         if (productImageElement && rebrickableData.imageUrl) {
             productImageElement.src = rebrickableData.imageUrl;
             productImageElement.srcset = `${rebrickableData.imageUrl} 360w, ${rebrickableData.imageUrl} 540w, ${rebrickableData.imageUrl} 720w, ${rebrickableData.imageUrl} 1024w`;
@@ -73,12 +72,12 @@ async function updateProductTitleAndImage(productTitleElement, productId) {
 
 // Function to check for a product on a product page
 function processProductPage() {
-    const productTitleElement = document.querySelector('h1.product-info__header_title.dj_skin_product_title'); // Updated selector
+    const productTitleElement = document.querySelector('h1.product-info__header_title.dj_skin_product_title');
     const productIdElement = document.querySelector('p.product-info__header_brief');
     
     if (productTitleElement && productIdElement) {
         const productIdText = productTitleElement.textContent.trim();
-        const productId = productIdText.match(/M\d+/)[0];  // Extracting the product ID (e.g., M17267)
+        const productId = productIdText.match(/M\d+/)[0];
         console.log(`Product ID found: ${productId}`);
         updateProductTitleAndImage(productTitleElement, productId);
     } else {
@@ -103,8 +102,8 @@ function processProductListingPage() {
     });
 }
 
-// Check if we are on a product page or product listing page
-if (document.querySelector('h1.product-info__header_title.dj_skin_product_title')) { // Updated condition
+// Determine which page type we're on and process accordingly
+if (document.querySelector('h1.product-info__header_title.dj_skin_product_title')) { 
     processProductPage();
 } else {
     processProductListingPage();
