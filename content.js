@@ -1,5 +1,3 @@
-// content.js
-
 // Function to reverse the ID (excluding the 'M') and fetch product data from Rebrickable API
 async function fetchRebrickableData(productId) {
     const reversedId = productId.slice(1).split('').reverse().join(''); // Remove 'M' and reverse the string
@@ -21,8 +19,10 @@ async function fetchRebrickableData(productId) {
             const data = await response.json();
             if (data && data.name) {
                 const productName = data.name.trim();
+                const productImageUrl = data.set_img_url;
                 console.log(`Product name found on Rebrickable: ${productName}`);
-                return productName;
+                console.log(`Product image URL: ${productImageUrl}`);
+                return { name: productName, imageUrl: productImageUrl };
             } else {
                 console.error(`Product name not found in Rebrickable data for product ID: ${productId}`);
             }
@@ -34,16 +34,38 @@ async function fetchRebrickableData(productId) {
     }
 }
 
-// Function to update product title
-async function updateProductTitle(productTitleElement, productId) {
-    const rebrickableTitle = await fetchRebrickableData(productId);
-    
+// Function to update product title and image
+async function updateProductTitleAndImage(productTitleElement, productId) {
+    const rebrickableData = await fetchRebrickableData(productId);
+
     // Example of a basic validation check to prevent incorrect updates
     const invalidKeywords = ["Plates", "Beams", "Bricks", "Miscellaneous"];
     
-    if (rebrickableTitle && !invalidKeywords.some(keyword => rebrickableTitle.includes(keyword))) {
-        productTitleElement.textContent = rebrickableTitle;
-        console.log(`Updated product title to: ${rebrickableTitle}`);
+    if (rebrickableData && !invalidKeywords.some(keyword => rebrickableData.name.includes(keyword))) {
+        productTitleElement.textContent = rebrickableData.name;
+        console.log(`Updated product title to: ${rebrickableData.name}`);
+
+        // If we have a product image URL, find the corresponding image element and update it
+        let productImageElement = null;
+
+        // Try different selectors to locate the image element
+        if (productTitleElement.closest('.product-image')) {
+            productImageElement = productTitleElement.closest('.product-image').querySelector('img');
+        } else if (productTitleElement.closest('.product-snippet')) {
+            productImageElement = productTitleElement.closest('.product-snippet').querySelector('img');
+        } else if (document.querySelector('.product-image__content img')) {
+            productImageElement = document.querySelector('.product-image__content img');
+        }
+
+        // Update the image source and alt attributes if the image element was found
+        if (productImageElement && rebrickableData.imageUrl) {
+            productImageElement.src = rebrickableData.imageUrl;
+            productImageElement.srcset = `${rebrickableData.imageUrl} 360w, ${rebrickableData.imageUrl} 540w, ${rebrickableData.imageUrl} 720w, ${rebrickableData.imageUrl} 1024w`;
+            productImageElement.alt = rebrickableData.name;
+            console.log(`Updated product image to: ${rebrickableData.imageUrl}`);
+        } else {
+            console.log('Product image element not found or no image URL provided.');
+        }
     } else {
         console.log('No matching title found on Rebrickable or title seems incorrect.');
     }
@@ -58,7 +80,7 @@ function processProductPage() {
         const productIdText = productTitleElement.textContent.trim();
         const productId = productIdText.match(/M\d+/)[0];  // Extracting the product ID (e.g., M17267)
         console.log(`Product ID found: ${productId}`);
-        updateProductTitle(productTitleElement, productId);
+        updateProductTitleAndImage(productTitleElement, productId);
     } else {
         console.log('Product ID or title element not found.');
     }
@@ -73,9 +95,10 @@ function processProductListingPage() {
         if (productIdMatch) {
             const productId = `M${productIdMatch[1]}`;
             console.log(`Product ID found: ${productId}`);
-            updateProductTitle(element, productId);
+            updateProductTitleAndImage(element, productId);
         } else {
             console.log('No product ID found in the URL.');
+            element.textContent += ' (No ID found)';
         }
     });
 }

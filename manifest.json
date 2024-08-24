@@ -2,11 +2,7 @@
   "manifest_version": 2,
   "name": "Marstoy Product Title Updater",
   "version": "1.0",
-  "description": "Updates product titles on Marstoy by checking against Bricklink.",
-  "background": {
-    "scripts": ["background.js"],
-    "persistent": true
-  },
+  "description": "Updates product titles on Marstoy by checking against Brickable.",
   "permissions": [
     "activeTab",
     "https://www.marstoy.com/",
