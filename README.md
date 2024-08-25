@@ -9,6 +9,22 @@
 - **Easy to Use:** Converts all products with the format "MOC M<ID> Parts Kit" on both product listing pages and individual product pages.
 - **Cross-Browser Compatibility:** Works on Chrome, Edge, Brave, and Firefox.
 
+## Screenshots
+
+### Before and After Conversion - Product Search Page
+**Before:**
+![Before Conversion - Search Page](BeforeConversionSearch.png)
+
+**After:**
+![After Conversion - Search Page](AfterConversionSearch.png)
+
+### Before and After Conversion - Specific Product Page
+**Before:**
+![Before Conversion - Product Page](BeforeConversionProduct.png)
+
+**After:**
+![After Conversion - Product Page](AfterConversionProduct.png)
+
 ## Prerequisites
 
 To use this extension, you must have a Rebrickable API key. Follow the steps below to obtain your API key.
