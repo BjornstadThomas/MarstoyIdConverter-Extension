@@ -39,10 +39,10 @@ To use this extension, you must have a Rebrickable API key. Follow the steps bel
 
 ### Chrome, Edge, and Brave:
 
-1. Clone or download this repository to your local machine.
+1. Clone or [download](https://github.com/BjornstadThomas/MarstoyIdConverter-Extension/archive/refs/heads/main.zip) this repository to your local machine.
 2. Open your browser and navigate to `chrome://extensions/` (for Chrome or Brave) or `edge://extensions/` (for Edge).
 3. Enable "Developer mode" in the top right corner.
-4. Click "Load unpacked" and select the directory where you downloaded the extension files.
+4. Click "Load unpacked" and select the "Chrome" directory where you downloaded the extension files.
 5. Open the `content.js` file in a text editor and replace the placeholder API key with your actual Rebrickable API key:
    ```javascript
    const apiKey = 'your-api-key-here';
@@ -52,7 +52,7 @@ To use this extension, you must have a Rebrickable API key. Follow the steps bel
 
 1. Clone or download this repository to your local machine.
 2. Open Firefox and navigate to `about:debugging#/runtime/this-firefox`.
-3. Click "Load Temporary Add-on" and select the `manifest.json` file from the extension's directory.
+3. Click "Load Temporary Add-on" and select the `manifest.json` file from the "Firefox" extension's directory.
 4. Open the `content.js` file in a text editor and replace the placeholder API key with your actual Rebrickable API key:
    ```javascript
    const apiKey = 'your-api-key-here';
