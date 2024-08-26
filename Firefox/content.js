@@ -1,7 +1,7 @@
 // Wrap the entire script in an IIFE to avoid redeclaring variables on multiple runs
 (function() {
     // Hardcoded API key
-    const apiKey = '<YOUR-API-KEY-FROM-REBRICKABLE>'; // Replace with your actual API key
+    const apiKey = 'YOUR-API-KEY-FROM-REBRICKABLE'; // Replace with your actual API key
 
     // Debugging flag
     const debugMode = false; // Set to false to disable debugging logs
@@ -66,6 +66,8 @@
                 productImageElement = productTitleElement.closest('.product-snippet').querySelector('img');
             } else if (document.querySelector('.product-image__content img')) {
                 productImageElement = document.querySelector('.product-image__content img');
+            } else if (productTitleElement.closest('.p-cursor-pointer')) { // Wishlist-specific selector
+                productImageElement = productTitleElement.closest('.p-cursor-pointer').querySelector('img');
             }
 
             if (productImageElement && rebrickableData.imageUrl) {
@@ -124,9 +126,29 @@
 		});
 	}
 
+    function processWishlistPage() {
+        const productTitleElements = document.querySelectorAll('p.p-text-wish_desc');
+
+        productTitleElements.forEach((element, index) => {
+            const productIdText = element.textContent.trim();
+            const productIdMatch = productIdText.match(/M\d+/);
+
+            if (productIdMatch) {
+                const productId = productIdMatch[0];
+                logDebug(`Product ID found for wishlist item ${index}: ${productId}`);
+                updateProductTitleAndImage(element, productId);
+            } else {
+                logDebug(`No product ID found for wishlist item ${index}.`);
+                element.textContent += ' (No ID found)';
+            }
+        });
+    }
+
     // Determine which page type we're on and process accordingly
     if (document.querySelector('h1.product-info__header_title.dj_skin_product_title')) { 
         processProductPage();
+    } else if (document.querySelector('p.p-text-wish_desc')) { 
+        processWishlistPage();
     } else {
         processProductListingPage();
     }
