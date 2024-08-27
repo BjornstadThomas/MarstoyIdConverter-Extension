@@ -62,7 +62,7 @@ To use this extension, you must have a Rebrickable API key. Follow the steps bel
 
 1. **Navigate to Marstoy.net**:
    - Open your browser and go to [Marstoy.net](https://marstoy.net).
-   - Use the search bar to search for "MOC" to retrieve all products with "MOC" in the title, or navigate directly to a specific product.
+   - Visit Brick Kits [page](https://www.marstoy.net/collections/alternative-set) OR use the search bar to search for "MOC" to retrieve all products with "MOC" in the title, or navigate directly to a specific product.
 
 2. **Convert Titles and Images**:
    - Click on the Marstoy Set Converter extension icon in your browser's toolbar.
