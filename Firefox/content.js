@@ -1,24 +1,38 @@
-// Wrap the entire script in an IIFE to avoid redeclaring variables on multiple runs
-(function() {
-    // Hardcoded API key
+(function () {
     const apiKey = 'YOUR-API-KEY-FROM-REBRICKABLE'; // Replace with your actual API key
+    const debugMode = false; // Enable debug logs for now to test
 
-    // Debugging flag
-    const debugMode = false; // Set to false to disable debugging logs
-
-    function logDebug(message) {
+    function logDebug(message, data = null) {
         if (debugMode) {
-            console.log(message);
+            const timestamp = new Date().toISOString();
+            console.log(`[${timestamp}] ${message}`, data || '');
         }
     }
 
     // Function to reverse the ID (excluding the 'M') and fetch product data from Rebrickable API
     async function fetchRebrickableData(productId) {
+        const normalizedProductId = productId.toUpperCase(); // Normalize the productId
+        logDebug(`Normalized product ID: ${normalizedProductId}`);
+
+        // Check if product ID exists in cache
+        const cachedData = await getCacheItem(normalizedProductId);
+        logCacheMetrics(cachedData);
+
+        if (cachedData) {
+            logDebug(`Cache hit for product ID: ${normalizedProductId}`, cachedData);
+            return cachedData; // Return cached data
+        } else {
+            logDebug(`Cache miss for product ID: ${normalizedProductId}`);
+        }
+
+        // Proceed with fetching data from the API
         const reversedId = productId.slice(1).split('').reverse().join(''); // Remove 'M' and reverse the string
-        logDebug(`Reversed ID for Rebrickable lookup: ${reversedId}`); // Log the reversed ID
-        
+        logDebug(`Reversed ID for Rebrickable lookup: ${reversedId}`);
+
         const url = `https://rebrickable.com/api/v3/lego/sets/${reversedId}-1/`;
         logDebug(`Rebrickable API URL: ${url}`);
+
+        const startTime = performance.now(); // Log network request start time
 
         try {
             const response = await fetch(url, {
@@ -29,6 +43,9 @@
                 }
             });
 
+            const endTime = performance.now(); // Log network request end time
+            logDebug(`Network request completed in ${(endTime - startTime).toFixed(2)} ms`);
+
             if (response.ok) {
                 const data = await response.json();
                 if (data && data.name) {
@@ -36,24 +53,86 @@
                     const productImageUrl = data.set_img_url;
                     logDebug(`Product name found on Rebrickable: ${productName}`);
                     logDebug(`Product image URL: ${productImageUrl}`);
+
+                    // Cache the fetched data using the normalized productId
+                    await setCacheItem(normalizedProductId, { name: productName, imageUrl: productImageUrl });
+
                     return { name: productName, imageUrl: productImageUrl };
                 } else {
-                    console.error(`Product name not found in Rebrickable data for product ID: ${productId}`);
+                    logDebug(`Product name not found in Rebrickable data for product ID: ${normalizedProductId}`);
                 }
             } else {
-                console.error(`Failed to fetch data from Rebrickable for product ID: ${productId}`);
+                logDebug(`Failed to fetch data from Rebrickable for product ID: ${normalizedProductId}`, response.statusText);
             }
         } catch (error) {
-            console.error(`Error fetching data from Rebrickable for product ID: ${productId}`, error);
+            logDebug(`Error fetching data from Rebrickable for product ID: ${normalizedProductId}`, error);
+        }
+
+        return null; // Return null if data could not be fetched
+    }
+
+    // Function to get a specific product from the cache
+    async function getCacheItem(productId) {
+        if (typeof browser !== 'undefined' && browser.storage) {
+            try {
+                const result = await browser.storage.local.get(productId);
+                return result[productId] || null;
+            } catch (error) {
+                logDebug('Error getting cache item from storage:', error);
+                return null;
+            }
+        } else {
+            logDebug('browser.storage.local is not available');
+            return null; // Fallback for environments without browser.storage.local
+        }
+    }
+
+    // Function to set a specific product in the cache
+    async function setCacheItem(productId, data) {
+        if (typeof browser !== 'undefined' && browser.storage) {
+            try {
+                await browser.storage.local.set({ [productId]: data });
+                logDebug(`Cache item for ${productId} successfully updated in browser.storage.local.`);
+            } catch (error) {
+                logDebug('Error setting cache item in storage:', error);
+            }
+        } else {
+            logDebug('browser.storage.local is not available');
+        }
+    }
+
+    // Function to log cache metrics
+    async function logCacheMetrics() {
+        if (typeof browser !== 'undefined' && browser.storage) {
+            try {
+                const items = await browser.storage.local.get(null);
+                const productKeys = Object.keys(items).filter(key => key.startsWith('M'));
+                const itemCount = productKeys.length;
+                const cacheSizeInBytes = new Blob([JSON.stringify(items)]).size;
+                logDebug(`Cache contains ${itemCount} items, size: ${cacheSizeInBytes} bytes`);
+
+                // Optionally log actual bytes used by browser.storage.local
+                if (browser.storage.local.getBytesInUse) {
+                    const bytesInUse = await browser.storage.local.getBytesInUse(null);
+                    logDebug(`Storage currently using ${bytesInUse} bytes`);
+                }
+
+                logDebug(`Cached data: ${JSON.stringify(items)}`);
+            } catch (error) {
+                logDebug('Error logging cache metrics:', error);
+            }
+        } else {
+            logDebug('browser.storage.local is not available');
         }
     }
 
     // Function to update product title and image
     async function updateProductTitleAndImage(productTitleElement, productId) {
-        const rebrickableData = await fetchRebrickableData(productId);
+        logDebug(`Updating product with ID: ${productId}`);
 
+        const rebrickableData = await fetchRebrickableData(productId);
         const invalidKeywords = ["Plates", "Beams", "Bricks", "Miscellaneous"];
-        
+
         if (rebrickableData && !invalidKeywords.some(keyword => rebrickableData.name.includes(keyword))) {
             productTitleElement.textContent = rebrickableData.name;
             logDebug(`Updated product title to: ${rebrickableData.name}`);
@@ -85,9 +164,10 @@
 
     // Function to check for a product on a product page
     function processProductPage() {
+        logDebug('Processing product page...');
         const productTitleElement = document.querySelector('h1.product-info__header_title.dj_skin_product_title');
         const productIdElement = document.querySelector('p.product-info__header_brief');
-        
+
         if (productTitleElement && productIdElement) {
             const productIdText = productTitleElement.textContent.trim();
             const productId = productIdText.match(/M\d+/)[0];
@@ -98,35 +178,35 @@
         }
     }
 
-	function processProductListingPage() {
-		const productTitleElements = document.querySelectorAll('a.product-snippet__title-normal');
+    function processProductListingPage() {
+        logDebug('Processing product listing page...');
+        const productTitleElements = document.querySelectorAll('a.product-snippet__title-normal');
 
-		productTitleElements.forEach((element, index) => {
-			logDebug(`Element ${index} href: ${element.href}`); // Log the href attribute
+        productTitleElements.forEach((element, index) => {
+            logDebug(`Element ${index} href: ${element.href}`);
 
-			// Try to match the product ID with the original logic
-			let productIdMatch = element.href.match(/\/products\/m(\d+)/i);
+            let productIdMatch = element.href.match(/\/products\/m(\d+)/i);
 
-			// If no match is found, try to match without the "M" and add it if necessary
-			if (!productIdMatch) {
-				const productIdWithoutM = element.href.match(/\/products\/(\d+)/i);
-				if (productIdWithoutM) {
-					productIdMatch = [`M${productIdWithoutM[1]}`, productIdWithoutM[1]];
-				}
-			}
+            if (!productIdMatch) {
+                const productIdWithoutM = element.href.match(/\/products\/(\d+)/i);
+                if (productIdWithoutM) {
+                    productIdMatch = [`M${productIdWithoutM[1]}`, productIdWithoutM[1]];
+                }
+            }
 
-			if (productIdMatch) {
-				const productId = `M${productIdMatch[1]}`;
-				logDebug(`Product ID found for element ${index}: ${productId}`);
-				updateProductTitleAndImage(element, productId);
-			} else {
-				logDebug(`No product ID found in the URL for element ${index}.`);
-				element.textContent += ' (No ID found)';
-			}
-		});
-	}
+            if (productIdMatch) {
+                const productId = `M${productIdMatch[1]}`;
+                logDebug(`Product ID found for element ${index}: ${productId}`);
+                updateProductTitleAndImage(element, productId);
+            } else {
+                logDebug(`No product ID found in the URL for element ${index}.`);
+                element.textContent += ' (No ID found)';
+            }
+        });
+    }
 
     function processWishlistPage() {
+        logDebug('Processing wishlist page...');
         const productTitleElements = document.querySelectorAll('p.p-text-wish_desc');
 
         productTitleElements.forEach((element, index) => {
@@ -145,9 +225,9 @@
     }
 
     // Determine which page type we're on and process accordingly
-    if (document.querySelector('h1.product-info__header_title.dj_skin_product_title')) { 
+    if (document.querySelector('h1.product-info__header_title.dj_skin_product_title')) {
         processProductPage();
-    } else if (document.querySelector('p.p-text-wish_desc')) { 
+    } else if (document.querySelector('p.p-text-wish_desc')) {
         processWishlistPage();
     } else {
         processProductListingPage();
