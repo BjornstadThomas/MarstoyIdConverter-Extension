@@ -172,9 +172,15 @@ async function fetchRebrickableData(productId) {
 
         if (productTitleElement && productIdElement) {
             const productIdText = productTitleElement.textContent.trim();
-            const productId = productIdText.match(/M\d+/)[0];
-            logDebug(`Product ID found: ${productId}`);
-            updateProductTitleAndImage(productTitleElement, productId);
+            const productIdMatch = productIdText.match(/M\d+/);
+            const productId = productIdMatch ? productIdMatch[0] : null;
+
+            if (productId) {
+                logDebug(`Product ID found: ${productId}`);
+                updateProductTitleAndImage(productTitleElement, productId);
+            } else {
+                logDebug('Product ID not found in title text.');
+            }
         } else {
             logDebug('Product ID or title element not found.');
         }
