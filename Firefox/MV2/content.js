@@ -1,6 +1,11 @@
 (function () {
     const API_KEY = 'YOUR_API_KEY'; // Replace with your actual Rebrickable API key
     const debugMode = false; // Set to true to enable debug logs
+    const MarstoyPageType = {
+      ProductListingPage: 1,
+      ProductPage: 2,
+      WishlistPage: 3
+    };
 
     // -------------------------
     // Logging
@@ -135,19 +140,33 @@
     // -------------------------
     // DOM helpers
     // -------------------------
-    function findProductImageElementFromTitle(titleEl) {
-        const card = titleEl.closest('.product-card-wrapper') || titleEl.closest('li.product-block');
-        if (!card) return null;
+    function findProductImageElementFromTitle(titleEl, marstoyPageType) {
+        logDebug(`Product title element type: ${titleEl.nodeName}`);
+        logDebug(`PageType: ${marstoyPageType}`);
 
-        // Primary target in new theme
-        let img = card.querySelector('a.card__media img');
-        if (img) return img;
+        if(marstoyPageType === MarstoyPageType.WishlistPage){
+            return (titleEl.closest('.product-item') && titleEl.closest('.product-item').querySelector('img'));
+        }
+        else if(marstoyPageType === MarstoyPageType.ProductPage){
+            return document.querySelector('.product__media-image');
+        }
+        else if(marstoyPageType === MarstoyPageType.ProductListingPage){
+            const card = titleEl.closest('.product-card-wrapper') || titleEl.closest('li.product-block');
+            if (!card) return null;
 
-        // Fallbacks across variants
-        img = card.querySelector('img.collection-hero__image')
-            || card.querySelector('.card__inner img')
-            || card.querySelector('img');
-        return img || null;
+            // Primary target in new theme
+            let img = card.querySelector('a.card__media img');
+            if (img) return img;
+
+            // Fallbacks across variants
+            img = card.querySelector('img.collection-hero__image')
+                || card.querySelector('.card__inner img')
+                || card.querySelector('img');
+            return img || null;
+        }
+        else{
+            return null;
+        }
     }
 
     function markAsProcessed(node) {
@@ -162,8 +181,10 @@
     // -------------------------
     // Update title + image
     // -------------------------
-    async function updateProductTitleAndImage(productTitleElement, productId) {
+    async function updateProductTitleAndImage(productTitleElement, productId, marstoyPageType) {
         logDebug(`Updating product with ID: ${productId}`);
+        logDebug(`Product title: ${productTitleElement.textContent}`);
+        logDebug(`marstoyPageType: ${marstoyPageType}`);
 
         const rebrickableData = await fetchRebrickableData(productId);
         const invalidKeywords = ["Plates", "Beams", "Bricks", "Miscellaneous"];
@@ -173,9 +194,7 @@
             productTitleElement.textContent = rebrickableData.name.replace(/\s+/g, ' ').trim();
             logDebug(`Updated product title to: ${rebrickableData.name}`);
 
-            const productImageElement =
-                findProductImageElementFromTitle(productTitleElement) ||
-                (productTitleElement.closest('.p-cursor-pointer') && productTitleElement.closest('.p-cursor-pointer').querySelector('img')); // wishlist fallback
+            const productImageElement = findProductImageElementFromTitle(productTitleElement, marstoyPageType);
 
             if (productImageElement && rebrickableData.imageUrl) {
                 productImageElement.src = rebrickableData.imageUrl;
@@ -187,8 +206,11 @@
                 ].join(', ');
                 productImageElement.alt = rebrickableData.name;
                 logDebug(`Updated product image to: ${rebrickableData.imageUrl}`);
-            } else {
-                logDebug('Product image element not found or no image URL provided.');
+            } else if (rebrickableData.imageUrl) {
+                logDebug('Product image element not found.');
+            }
+            else {
+                logDebug('No image URL provided.');
             }
         } else {
             logDebug('No matching title found on Rebrickable or title seems incorrect.');
@@ -201,8 +223,9 @@
     function processProductPage() {
         logDebug('Processing product page...');
         const productTitleElement = document.querySelector(
-            'h1.product__title, h1.product-title, h1.product-info__header_title.dj_skin_product_title'
+            'div.product__title, h1.product-title, h1.product-info__header_title.dj_skin_product_title'
         );
+        const productSkuElement = document.querySelector('#variant_sku_no_main-product-info');
         if (!productTitleElement) {
             logDebug('Product title element not found on product page.');
             return;
@@ -211,19 +234,27 @@
 
         // Prefer extracting the ID from the URL (e.g. /products/moc-m87077-parts-kit)
         const urlPath = location.pathname;
-        let match = urlPath.match(/\/products\/(?:moc-)?m?(\d+)/i);
-        let productId = match ? `M${match[1]}` : null;
+        let match = urlPath.match(/\/products\/.*?([MN])(\d+)/i);
+        let productId = match ? `${match[1].toUpperCase()}${match[2]}` : null;
 
         // Fallback: scan text on page if needed
         if (!productId) {
-            const text = `${productTitleElement.textContent} ${document.body.innerText}`;
+            logDebug('Could not find productId in URL, trying fallback...');
+            const text = `${productSkuElement.textContent}`;
+            logDebug(`productSkuElement text: ${text}`);
             const idMatch = text.match(/\bM\s?(\d+)\b/i);
             if (idMatch) productId = `M${idMatch[1]}`;
+
+            // Could be "N...." format
+            if(!productId){
+                const idMatch = text.match(/\bN\s?(\d+)\b/i);
+                if (idMatch) productId = `N${idMatch[1]}`;
+            }
         }
 
         if (productId) {
             logDebug(`Product ID found: ${productId}`);
-            Promise.resolve(updateProductTitleAndImage(productTitleElement, productId))
+            Promise.resolve(updateProductTitleAndImage(productTitleElement, productId, MarstoyPageType.ProductPage))
                 .finally(() => markAsProcessed(productTitleElement));
         } else {
             logDebug('Product ID not found on product page.');
@@ -255,13 +286,19 @@
             // Fallback: if title contains "M87077" or "M 87077"
             if (!productId) {
                 const text = titleEl.textContent.trim();
-                const idMatch = text.match(/\bM\s?(\d+)\b/i);
+                const idMatch = text.match(/\b[MN]\s?(\d+)\b/i);
                 if (idMatch) productId = `M${idMatch[1]}`;
+
+                // Could be "N...." format
+                if(!productId){
+                    const idMatch = text.match(/\bN\s?(\d+)\b/i);
+                    if (idMatch) productId = `N${idMatch[1]}`;
+                }
             }
 
             if (productId) {
                 logDebug(`Product ID found for element ${index}: ${productId}`);
-                Promise.resolve(updateProductTitleAndImage(titleEl, productId))
+                Promise.resolve(updateProductTitleAndImage(titleEl, productId, MarstoyPageType.ProductListingPage))
                     .finally(() => markAsProcessed(titleEl));
             } else {
                 logDebug(`No product ID found for element ${index}.`);
@@ -271,7 +308,22 @@
 
     function processWishlistPage() {
         logDebug('Processing wishlist page...');
-        const productTitleElements = document.querySelectorAll('p.p-text-wish_desc');
+        const productItems = document.querySelectorAll(".product-item");
+
+        if (!productItems || productItems.length === 0){
+            logDebug('No elements with class .product-item found.');
+            return;
+        }
+
+        const productTitleElements = Array.from(productItems)            // convert NodeList → Array
+            .map(item => item.querySelector("[title]"))                  // find [title] inside each
+            .filter(el => el !== null);                                  // keep only found ones
+
+        if (!productTitleElements || productTitleElements.length === 0){
+            logDebug('No title elements found in elements with class .product-item.');
+            return;
+        }
+
 
         productTitleElements.forEach((element, index) => {
             if (isProcessed(element)) return;
@@ -282,7 +334,7 @@
             if (productIdMatch) {
                 const productId = productIdMatch[0];
                 logDebug(`Product ID found for wishlist item ${index}: ${productId}`);
-                Promise.resolve(updateProductTitleAndImage(element, productId))
+                Promise.resolve(updateProductTitleAndImage(element, productId, MarstoyPageType.WishlistPage))
                     .finally(() => markAsProcessed(element));
             } else {
                 logDebug(`No product ID found for wishlist item ${index}.`);
@@ -295,11 +347,14 @@
     // Page detection
     // -------------------------
     function determineAndProcessPage() {
-        if (document.querySelector('h1.product__title, h1.product-title, h1.product-info__header_title.dj_skin_product_title')) {
+        logDebug(`determineAndProcessPage...`);
+        if (window.location.href.toLowerCase().includes("products")) {
             processProductPage();
-        } else if (document.querySelector('p.p-text-wish_desc')) {
+        } else if (window.location.href.toLowerCase().includes("wishlist")) {
             processWishlistPage();
-        } else if (document.querySelector('li.product-block, .product-card-wrapper, h3.product__title')) {
+        } else if (window.location.href.toLowerCase().includes("brick-kits")) {
+            processProductListingPage();
+        } else if (window.location.href.toLowerCase().includes("brick-packs")) {
             processProductListingPage();
         } else {
             logDebug('Page type not recognized; defaulting to listing processing.');
@@ -320,10 +375,8 @@
 
     function observeDom() {
         const rerun = debounce(() => {
-            if (document.querySelector('li.product-block, .product-card-wrapper, h3.product__title')) {
-                logDebug('DOM changed: re-processing listing page');
-                processProductListingPage();
-            }
+            logDebug('Timed conversion triggered.');
+            determineAndProcessPage();
         }, 300);
 
         const obs = new MutationObserver(rerun);
