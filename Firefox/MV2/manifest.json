@@ -6,13 +6,12 @@
   "permissions": [
     "activeTab",
     "storage",
-    "*://*.marstoy.net/*",
     "*://*.marstoy.com/*",
     "*://*.rebrickable.com/*"
   ],
   "content_scripts": [
     {
-      "matches": ["*://*.marstoy.net/*", "*://*.marstoy.com/*"],
+      "matches": ["*://*.marstoy.com/*"],
       "js": ["content.js"],
       "run_at": "document_idle"
     }
@@ -22,7 +21,7 @@
   },
   "applications": {
     "gecko": {
-      "id": "your-extension-id@domain.com",
+      "id": "marstoy-id-converter@extension",
       "strict_min_version": "68.0"
     }
   }
