@@ -2,6 +2,16 @@
     const API_KEY = 'YOUR_API_KEY'; // Replace with your actual Rebrickable API key
     const debugMode = false; // Set to true to enable debug logs
 
+    const hasBrowserStorage = typeof browser !== 'undefined' && !!(browser.storage && browser.storage.local);
+
+    const MarstoyPageType = {
+        ProductListingPage: 1,
+        ProductPage: 2,
+        WishlistPage: 3
+    };
+
+    const INVALID_KEYWORDS = ['Plates', 'Beams', 'Bricks', 'Miscellaneous'];
+
     // -------------------------
     // Logging
     // -------------------------
@@ -16,7 +26,7 @@
     // Cache helpers (Firefox browser.storage)
     // -------------------------
     async function getCacheItem(productId) {
-        if (typeof browser !== 'undefined' && browser.storage && browser.storage.local) {
+        if (hasBrowserStorage) {
             try {
                 const result = await browser.storage.local.get(productId);
                 return result[productId] || null;
@@ -31,7 +41,7 @@
     }
 
     async function setCacheItem(productId, data) {
-        if (typeof browser !== 'undefined' && browser.storage && browser.storage.local) {
+        if (hasBrowserStorage) {
             try {
                 await browser.storage.local.set({ [productId]: data });
                 logDebug(`Cache item for ${productId} successfully updated in browser.storage.local.`);
@@ -44,10 +54,10 @@
     }
 
     async function logCacheMetrics() {
-        if (!(typeof browser !== 'undefined' && browser.storage && browser.storage.local)) return;
+        if (!hasBrowserStorage) return;
         try {
             const items = await browser.storage.local.get(null);
-            const productKeys = Object.keys(items).filter(key => key.startsWith('M'));
+            const productKeys = Object.keys(items).filter(key => key.startsWith('M') || key.startsWith('N'));
             const itemCount = productKeys.length;
             const cacheSizeInBytes = new Blob([JSON.stringify(items)]).size;
             logDebug(`Cache contains ${itemCount} items, size: ${cacheSizeInBytes} bytes`);
@@ -73,7 +83,7 @@
         logDebug(`Normalized product ID: ${normalizedProductId}`);
 
         const cachedData = await getCacheItem(normalizedProductId);
-        logCacheMetrics();
+        if (debugMode) await logCacheMetrics();
 
         if (cachedData) {
             logDebug(`Cache hit for product ID: ${normalizedProductId}`, cachedData);
@@ -114,7 +124,7 @@
 
             const data = await response.json();
             if (data && data.name) {
-                const productName = String(data.name || '').trim();
+                const productName = data.name.trim();
                 const productImageUrl = data.set_img_url || '';
                 logDebug(`Product name found on Rebrickable: ${productName}`);
                 logDebug(`Product image URL: ${productImageUrl}`);
@@ -135,50 +145,58 @@
     // -------------------------
     // DOM helpers
     // -------------------------
-    function findProductImageElementFromTitle(titleEl) {
-        const card = titleEl.closest('.product-card-wrapper') || titleEl.closest('li.product-block');
-        if (!card) return null;
+    function findProductImageElementFromTitle(titleEl, marstoyPageType) {
+        logDebug(`findProductImageElementFromTitle — pageType: ${marstoyPageType}`);
 
-        // Primary target in new theme
-        let img = card.querySelector('a.card__media img');
-        if (img) return img;
+        if (marstoyPageType === MarstoyPageType.ProductPage) {
+            // Shopline product detail page: first image in the media gallery
+            return document.querySelector('img.media-gallery__image');
+        }
 
-        // Fallbacks across variants
-        img = card.querySelector('img.collection-hero__image')
-            || card.querySelector('.card__inner img')
-            || card.querySelector('img');
-        return img || null;
+        if (marstoyPageType === MarstoyPageType.ProductListingPage) {
+            // titleEl is the <a.block-product-title> link — walk up to the card root
+            const card = titleEl.closest('li, article, .product-card-wrapper, li.product-block');
+            if (!card) return null;
+            return card.querySelector('img.block-product-image__image') || card.querySelector('img');
+        }
+
+        if (marstoyPageType === MarstoyPageType.WishlistPage) {
+            // titleEl is div[title] inside a.product-item
+            const item = titleEl.closest('a.product-item');
+            return item ? item.querySelector('img.lozad, img') : null;
+        }
+
+        return null;
     }
 
     function markAsProcessed(node) {
-        const card = node.closest('.product-card-wrapper') || node.closest('li.product-block') || node;
+        const card = node.closest('a.product-item, li, article, .product-card-wrapper, li.product-block') || node;
         if (card) card.dataset.mstProcessed = '1';
     }
     function isProcessed(node) {
-        const card = node.closest('.product-card-wrapper') || node.closest('li.product-block') || node;
+        const card = node.closest('a.product-item, li, article, .product-card-wrapper, li.product-block') || node;
         return !!(card && card.dataset.mstProcessed === '1');
     }
 
     // -------------------------
     // Update title + image
     // -------------------------
-    async function updateProductTitleAndImage(productTitleElement, productId) {
+    async function updateProductTitleAndImage(productTitleElement, productId, marstoyPageType) {
         logDebug(`Updating product with ID: ${productId}`);
 
         const rebrickableData = await fetchRebrickableData(productId);
-        const invalidKeywords = ["Plates", "Beams", "Bricks", "Miscellaneous"];
-
-        if (rebrickableData && !invalidKeywords.some(keyword => rebrickableData.name.includes(keyword))) {
-            // Normalize whitespace in case the theme injects odd spacing
+        if (rebrickableData && !INVALID_KEYWORDS.some(keyword => rebrickableData.name.includes(keyword))) {
             productTitleElement.textContent = rebrickableData.name.replace(/\s+/g, ' ').trim();
             logDebug(`Updated product title to: ${rebrickableData.name}`);
 
-            const productImageElement =
-                findProductImageElementFromTitle(productTitleElement) ||
-                (productTitleElement.closest('.p-cursor-pointer') && productTitleElement.closest('.p-cursor-pointer').querySelector('img')); // wishlist fallback
+            const productImageElement = findProductImageElementFromTitle(productTitleElement, marstoyPageType);
 
             if (productImageElement && rebrickableData.imageUrl) {
                 productImageElement.src = rebrickableData.imageUrl;
+                // data-src is used by the lozad lazy loader (wishlist page)
+                if (productImageElement.dataset.src !== undefined) {
+                    productImageElement.dataset.src = rebrickableData.imageUrl;
+                }
                 productImageElement.srcset = [
                     `${rebrickableData.imageUrl} 375w`,
                     `${rebrickableData.imageUrl} 540w`,
@@ -187,8 +205,10 @@
                 ].join(', ');
                 productImageElement.alt = rebrickableData.name;
                 logDebug(`Updated product image to: ${rebrickableData.imageUrl}`);
+            } else if (rebrickableData.imageUrl) {
+                logDebug('Product image element not found.');
             } else {
-                logDebug('Product image element not found or no image URL provided.');
+                logDebug('No image URL provided.');
             }
         } else {
             logDebug('No matching title found on Rebrickable or title seems incorrect.');
@@ -200,8 +220,10 @@
     // -------------------------
     function processProductPage() {
         logDebug('Processing product page...');
+
+        // Shopline theme: product title is in h1.product-detail__title
         const productTitleElement = document.querySelector(
-            'h1.product__title, h1.product-title, h1.product-info__header_title.dj_skin_product_title'
+            'h1.product-detail__title, h1.product-title, h1.product-info__header_title'
         );
         if (!productTitleElement) {
             logDebug('Product title element not found on product page.');
@@ -209,21 +231,25 @@
         }
         if (isProcessed(productTitleElement)) return;
 
-        // Prefer extracting the ID from the URL (e.g. /products/moc-m87077-parts-kit)
+        // Extract ID from URL: /products/m44312 or /products/moc-m87077-parts-kit
         const urlPath = location.pathname;
-        let match = urlPath.match(/\/products\/(?:moc-)?m?(\d+)/i);
-        let productId = match ? `M${match[1]}` : null;
+        const match = urlPath.match(/\/products\/(?:moc-)?([mn])(\d+)/i);
+        let productId = match ? `${match[1].toUpperCase()}${match[2]}` : null;
 
-        // Fallback: scan text on page if needed
+        // Fallback: check the SKU element (Shopline: theme-product-variant-sku)
         if (!productId) {
-            const text = `${productTitleElement.textContent} ${document.body.innerText}`;
-            const idMatch = text.match(/\bM\s?(\d+)\b/i);
-            if (idMatch) productId = `M${idMatch[1]}`;
+            logDebug('Could not find productId in URL, trying SKU element fallback...');
+            const skuEl = document.querySelector('theme-product-variant-sku, .product-variant-sku');
+            const skuText = skuEl ? skuEl.textContent : '';
+            logDebug(`SKU element text: ${skuText}`);
+            const idMatch = skuText.match(/\b([MN])(\d+)\b/i);
+            if (idMatch) productId = `${idMatch[1].toUpperCase()}${idMatch[2]}`;
         }
 
         if (productId) {
             logDebug(`Product ID found: ${productId}`);
-            Promise.resolve(updateProductTitleAndImage(productTitleElement, productId))
+            updateProductTitleAndImage(productTitleElement, productId, MarstoyPageType.ProductPage)
+                .catch(err => logDebug('Update failed:', err))
                 .finally(() => markAsProcessed(productTitleElement));
         } else {
             logDebug('Product ID not found on product page.');
@@ -232,36 +258,37 @@
 
     function processProductListingPage() {
         logDebug('Processing product listing page...');
-        // New theme: titles are in h3.product__title; fallback to visually-hidden text inside the link
-        const titles = document.querySelectorAll('h3.product__title');
+
+        // Shopline theme: title links are <a class="block-product-title">
+        const titles = document.querySelectorAll('a.block-product-title');
         const nodes = titles.length
             ? titles
-            : document.querySelectorAll('.product-card-wrapper a.full-unstyled-link .visually-hidden');
+            : document.querySelectorAll('a[href*="/products/"][class*="title"]');
 
         nodes.forEach((titleEl, index) => {
             if (isProcessed(titleEl)) return;
 
-            // Find the nearest product card and its product link
-            const card = titleEl.closest('.product-card-wrapper') || titleEl.closest('li.product-block') || document;
-            const link = card.querySelector('a.full-unstyled-link, a.card__media, a[href*="/products/"]');
-
             let productId = null;
-            if (link && link.href) {
-                // Handle /products/moc-m87077-... and /products/m87077-...
-                const m = link.href.match(/\/products\/(?:moc-)?m?(\d+)/i);
-                if (m) productId = `M${m[1]}`;
+
+            // Extract from href: /products/m44312  or  /products/moc-m87077-parts-kit
+            if (titleEl.href) {
+                const m = titleEl.href.match(/\/products\/(?:moc-)?([mn])(\d+)/i);
+                if (m) productId = `${m[1].toUpperCase()}${m[2]}`;
             }
 
-            // Fallback: if title contains "M87077" or "M 87077"
+            // Fallback: ID in the visible title text ("MOC M44312 Parts Kit")
             if (!productId) {
                 const text = titleEl.textContent.trim();
-                const idMatch = text.match(/\bM\s?(\d+)\b/i);
-                if (idMatch) productId = `M${idMatch[1]}`;
+                const idMatch = text.match(/\b([MN])\s?(\d+)\b/i);
+                if (idMatch) productId = `${idMatch[1].toUpperCase()}${idMatch[2]}`;
             }
 
             if (productId) {
                 logDebug(`Product ID found for element ${index}: ${productId}`);
-                Promise.resolve(updateProductTitleAndImage(titleEl, productId))
+                // Pass the inner span as the text target so only the label is replaced
+                const spanEl = titleEl.querySelector('span') || titleEl;
+                updateProductTitleAndImage(spanEl, productId, MarstoyPageType.ProductListingPage)
+                    .catch(err => logDebug('Update failed:', err))
                     .finally(() => markAsProcessed(titleEl));
             } else {
                 logDebug(`No product ID found for element ${index}.`);
@@ -271,22 +298,41 @@
 
     function processWishlistPage() {
         logDebug('Processing wishlist page...');
-        const productTitleElements = document.querySelectorAll('p.p-text-wish_desc');
 
-        productTitleElements.forEach((element, index) => {
-            if (isProcessed(element)) return;
+        // Shopline wishlist: each card is <a class="product-item">
+        // The title is <div title="MOC M28167 Parts Kit"> inside the card
+        const cards = document.querySelectorAll('a.product-item');
 
-            const productIdText = element.textContent.trim();
-            const productIdMatch = productIdText.match(/M\d+/);
+        if (!cards.length) {
+            logDebug('No elements with a.product-item found on wishlist page.');
+            return;
+        }
 
-            if (productIdMatch) {
-                const productId = productIdMatch[0];
+        cards.forEach((card, index) => {
+            if (isProcessed(card)) return;
+
+            const titleEl = card.querySelector('div[title]');
+            if (!titleEl) {
+                logDebug(`No div[title] found in wishlist card ${index}.`);
+                return;
+            }
+
+            // ID is in the title attribute: "MOC M28167 Parts Kit"
+            const titleText = titleEl.getAttribute('title') || titleEl.textContent;
+            const idMatch = titleText.match(/\b([MN])\s?(\d+)\b/i);
+
+            if (idMatch) {
+                const productId = `${idMatch[1].toUpperCase()}${idMatch[2]}`;
                 logDebug(`Product ID found for wishlist item ${index}: ${productId}`);
-                Promise.resolve(updateProductTitleAndImage(element, productId))
-                    .finally(() => markAsProcessed(element));
+                updateProductTitleAndImage(titleEl, productId, MarstoyPageType.WishlistPage)
+                    .then(() => {
+                        // Keep the title attribute in sync with the updated text content
+                        if (titleEl.textContent) titleEl.setAttribute('title', titleEl.textContent);
+                    })
+                    .catch(err => logDebug('Update failed:', err))
+                    .finally(() => markAsProcessed(card));
             } else {
-                logDebug(`No product ID found for wishlist item ${index}.`);
-                // element.textContent += ' (No ID found)'; // optional
+                logDebug(`No product ID found for wishlist item ${index}: "${titleText}"`);
             }
         });
     }
@@ -295,14 +341,15 @@
     // Page detection
     // -------------------------
     function determineAndProcessPage() {
-        if (document.querySelector('h1.product__title, h1.product-title, h1.product-info__header_title.dj_skin_product_title')) {
+        logDebug('determineAndProcessPage...');
+        const href = window.location.href.toLowerCase();
+
+        if (href.includes('/products/')) {
             processProductPage();
-        } else if (document.querySelector('p.p-text-wish_desc')) {
+        } else if (href.includes('wishlist')) {
             processWishlistPage();
-        } else if (document.querySelector('li.product-block, .product-card-wrapper, h3.product__title')) {
-            processProductListingPage();
         } else {
-            logDebug('Page type not recognized; defaulting to listing processing.');
+            // Collections / listing pages
             processProductListingPage();
         }
     }
@@ -310,18 +357,26 @@
     // -------------------------
     // MutationObserver for dynamic content
     // -------------------------
-    let listingDebounce;
     function debounce(fn, ms) {
+        let timer;
         return (...args) => {
-            clearTimeout(listingDebounce);
-            listingDebounce = setTimeout(() => fn(...args), ms);
+            clearTimeout(timer);
+            timer = setTimeout(() => fn(...args), ms);
         };
     }
 
     function observeDom() {
+        const href = window.location.href.toLowerCase();
+        // Product detail pages are static once loaded — no observer needed
+        if (href.includes('/products/')) return;
+
+        const isWishlist = href.includes('wishlist');
         const rerun = debounce(() => {
-            if (document.querySelector('li.product-block, .product-card-wrapper, h3.product__title')) {
-                logDebug('DOM changed: re-processing listing page');
+            if (isWishlist) {
+                logDebug('DOM changed: re-running wishlist processor');
+                processWishlistPage();
+            } else {
+                logDebug('DOM changed: re-running listing processor');
                 processProductListingPage();
             }
         }, 300);
@@ -334,11 +389,10 @@
     // Runtime message listener (Firefox)
     // -------------------------
     if (typeof browser !== 'undefined' && browser.runtime && browser.runtime.onMessage) {
-        browser.runtime.onMessage.addListener((request, sender) => {
+        browser.runtime.onMessage.addListener((request) => {
             if (request && request.action === 'convert') {
                 logDebug('Manual conversion triggered.');
                 determineAndProcessPage();
-                // In Firefox, returning a Promise keeps the channel alive if needed
                 return Promise.resolve({ status: 'Update complete!' });
             }
         });

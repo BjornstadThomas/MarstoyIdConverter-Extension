@@ -6,7 +6,7 @@ body {
 }
 
 .container {
-    width: 300px; /* Increased width */
+    width: 300px;
     padding: 20px;
     text-align: center;
     box-sizing: border-box;
