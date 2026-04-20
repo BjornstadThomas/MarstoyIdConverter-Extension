@@ -139,15 +139,20 @@
     // -------------------------
     // DOM helpers
     // -------------------------
+    const CARD_SELECTOR = 'product-item, .product-card-wrapper, li.product-block';
+
     function findProductImageElementFromTitle(titleEl) {
-        const card = titleEl.closest('.product-card-wrapper') || titleEl.closest('li.product-block');
+        const card = titleEl.closest(CARD_SELECTOR);
         if (!card) return null;
 
-        // Primary target in new theme
-        let img = card.querySelector('a.card__media img');
+        // Shopline theme (current marstoy.com)
+        let img = card.querySelector('img.block-product-image__image');
         if (img) return img;
 
-        // Fallbacks across variants
+        // Shopify Dawn-style theme (legacy marstoy.net)
+        img = card.querySelector('a.card__media img');
+        if (img) return img;
+
         img = card.querySelector('img.collection-hero__image')
             || card.querySelector('.card__inner img')
             || card.querySelector('img');
@@ -155,47 +160,67 @@
     }
 
     function markAsProcessed(node) {
-        const card = node.closest('.product-card-wrapper') || node.closest('li.product-block') || node;
+        const card = node.closest(CARD_SELECTOR) || node;
         if (card) card.dataset.mstProcessed = '1';
     }
     function isProcessed(node) {
-        const card = node.closest('.product-card-wrapper') || node.closest('li.product-block') || node;
+        const card = node.closest(CARD_SELECTOR) || node;
         return !!(card && card.dataset.mstProcessed === '1');
     }
 
     // -------------------------
     // Update title + image
     // -------------------------
+    function applyImage(img, rebrickableData) {
+        if (!img || !rebrickableData.imageUrl) return false;
+        img.src = rebrickableData.imageUrl;
+        img.srcset = [
+            `${rebrickableData.imageUrl} 375w`,
+            `${rebrickableData.imageUrl} 540w`,
+            `${rebrickableData.imageUrl} 720w`,
+            `${rebrickableData.imageUrl} 800w`
+        ].join(', ');
+        img.alt = rebrickableData.name;
+        return true;
+    }
+
     async function updateProductTitleAndImage(productTitleElement, productId) {
         logDebug(`Updating product with ID: ${productId}`);
 
         const rebrickableData = await fetchRebrickableData(productId);
         const invalidKeywords = ["Plates", "Beams", "Bricks", "Miscellaneous"];
 
-        if (rebrickableData && !invalidKeywords.some(keyword => rebrickableData.name.includes(keyword))) {
-            // Normalize whitespace in case the theme injects odd spacing
-            productTitleElement.textContent = rebrickableData.name.replace(/\s+/g, ' ').trim();
-            logDebug(`Updated product title to: ${rebrickableData.name}`);
-
-            const productImageElement =
-                findProductImageElementFromTitle(productTitleElement) ||
-                (productTitleElement.closest('.p-cursor-pointer') && productTitleElement.closest('.p-cursor-pointer').querySelector('img')); // wishlist fallback
-
-            if (productImageElement && rebrickableData.imageUrl) {
-                productImageElement.src = rebrickableData.imageUrl;
-                productImageElement.srcset = [
-                    `${rebrickableData.imageUrl} 375w`,
-                    `${rebrickableData.imageUrl} 540w`,
-                    `${rebrickableData.imageUrl} 720w`,
-                    `${rebrickableData.imageUrl} 800w`
-                ].join(', ');
-                productImageElement.alt = rebrickableData.name;
-                logDebug(`Updated product image to: ${rebrickableData.imageUrl}`);
-            } else {
-                logDebug('Product image element not found or no image URL provided.');
-            }
-        } else {
+        if (!(rebrickableData && !invalidKeywords.some(keyword => rebrickableData.name.includes(keyword)))) {
             logDebug('No matching title found on Rebrickable or title seems incorrect.');
+            return;
+        }
+
+        productTitleElement.textContent = rebrickableData.name.replace(/\s+/g, ' ').trim();
+        logDebug(`Updated product title to: ${rebrickableData.name}`);
+
+        // On a product detail page the title is not inside a card; update the whole media gallery.
+        const insideCard = productTitleElement.closest(CARD_SELECTOR);
+        if (!insideCard) {
+            const galleryImgs = document.querySelectorAll(
+                'img.media-gallery__image, img.media-gallery__thumbnail-image'
+            );
+            let updated = 0;
+            galleryImgs.forEach((img) => { if (applyImage(img, rebrickableData)) updated++; });
+            if (!updated) {
+                if (applyImage(document.querySelector('img.collection-hero__image'), rebrickableData)) updated++;
+            }
+            logDebug(`Updated ${updated} detail-page image(s) to: ${rebrickableData.imageUrl}`);
+            return;
+        }
+
+        const productImageElement =
+            findProductImageElementFromTitle(productTitleElement) ||
+            (productTitleElement.closest('.p-cursor-pointer') && productTitleElement.closest('.p-cursor-pointer').querySelector('img')); // wishlist fallback
+
+        if (applyImage(productImageElement, rebrickableData)) {
+            logDebug(`Updated product image to: ${rebrickableData.imageUrl}`);
+        } else {
+            logDebug('Product image element not found or no image URL provided.');
         }
     }
 
@@ -205,7 +230,7 @@
     function processProductPage() {
         logDebug('Processing product page...');
         const productTitleElement = document.querySelector(
-            'h1.product__title, h1.product-title, h1.product-info__header_title.dj_skin_product_title'
+            'h1.product-detail__title, h1.product__title, h1.product-title, h1.product-info__header_title.dj_skin_product_title'
         );
         if (!productTitleElement) {
             logDebug('Product title element not found on product page.');
@@ -234,42 +259,54 @@
         }
     }
 
+    function findTitleElementInCard(card) {
+        // Shopline: <a class="block-product-title"><span>Title</span></a>
+        return card.querySelector('a.block-product-title span')
+            || card.querySelector('a.block-product-title')
+            || card.querySelector('h3.product__title')
+            || card.querySelector('a.full-unstyled-link .visually-hidden');
+    }
+
+    function extractProductIdFromCard(card, titleEl) {
+        const handle = (card.getAttribute && card.getAttribute('data-product-handle')) || '';
+        let m = handle.match(/\bm(\d+)/i);
+        if (m) return `M${m[1]}`;
+
+        const link = card.querySelector('a[href*="/products/"]');
+        if (link && link.href) {
+            m = link.href.match(/\/products\/(?:moc-)?m?(\d+)/i);
+            if (m) return `M${m[1]}`;
+        }
+
+        if (titleEl) {
+            m = titleEl.textContent.match(/\bM\s?(\d+)\b/i);
+            if (m) return `M${m[1]}`;
+        }
+        return null;
+    }
+
     function processProductListingPage() {
         logDebug('Processing product listing page...');
-        // New theme: titles are in h3.product__title; fallback to the visually-hidden text inside the link
-        const titles = document.querySelectorAll('h3.product__title');
-        const nodes = titles.length
-            ? titles
-            : document.querySelectorAll('.product-card-wrapper a.full-unstyled-link .visually-hidden');
 
-        nodes.forEach((titleEl, index) => {
-            if (isProcessed(titleEl)) return;
+        const cards = document.querySelectorAll(CARD_SELECTOR);
+        cards.forEach((card, index) => {
+            if (isProcessed(card)) return;
 
-            // Find the nearest product card and its product link
-            const card = titleEl.closest('.product-card-wrapper') || titleEl.closest('li.product-block') || document;
-            const link = card.querySelector('a.full-unstyled-link, a.card__media, a[href*="/products/"]');
-
-            let productId = null;
-            if (link && link.href) {
-                // Handle /products/moc-m87077-... and /products/m87077-...
-                const m = link.href.match(/\/products\/(?:moc-)?m?(\d+)/i);
-                if (m) productId = `M${m[1]}`;
+            const titleEl = findTitleElementInCard(card);
+            if (!titleEl) {
+                logDebug(`No title element in card ${index}.`);
+                return;
             }
 
-            // Fallback: if title contains "M87077" or "M 87077"
+            const productId = extractProductIdFromCard(card, titleEl);
             if (!productId) {
-                const text = titleEl.textContent.trim();
-                const idMatch = text.match(/\bM\s?(\d+)\b/i);
-                if (idMatch) productId = `M${idMatch[1]}`;
+                logDebug(`No product ID found for card ${index}.`);
+                return;
             }
 
-            if (productId) {
-                logDebug(`Product ID found for element ${index}: ${productId}`);
-                Promise.resolve(updateProductTitleAndImage(titleEl, productId))
-                    .finally(() => markAsProcessed(titleEl));
-            } else {
-                logDebug(`No product ID found for element ${index}.`);
-            }
+            logDebug(`Product ID found for card ${index}: ${productId}`);
+            Promise.resolve(updateProductTitleAndImage(titleEl, productId))
+                .finally(() => markAsProcessed(titleEl));
         });
     }
 
@@ -299,11 +336,11 @@
     // Page detection
     // -------------------------
     function determineAndProcessPage() {
-        if (document.querySelector('h1.product__title, h1.product-title, h1.product-info__header_title.dj_skin_product_title')) {
+        if (document.querySelector('h1.product-detail__title, h1.product__title, h1.product-title, h1.product-info__header_title.dj_skin_product_title')) {
             processProductPage();
         } else if (document.querySelector('p.p-text-wish_desc')) {
             processWishlistPage();
-        } else if (document.querySelector('li.product-block, .product-card-wrapper, h3.product__title')) {
+        } else if (document.querySelector(CARD_SELECTOR + ', h3.product__title')) {
             processProductListingPage();
         } else {
             logDebug('Page type not recognized; defaulting to listing processing.');
@@ -324,7 +361,7 @@
 
     function observeDom() {
         const rerun = debounce(() => {
-            if (document.querySelector('li.product-block, .product-card-wrapper, h3.product__title')) {
+            if (document.querySelector(CARD_SELECTOR + ', h3.product__title')) {
                 logDebug('DOM changed: re-processing listing page');
                 processProductListingPage();
             }
